@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "best-tempmail"
+version = "1.0.0"
+description = "Disposable email inboxes for automated testing. Create inboxes, wait for mail, extract verification codes."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Best Temp Mail" }]
+keywords = [
+    "temp-mail", "tempmail", "disposable-email", "email-testing",
+    "otp", "verification-code", "e2e-testing", "pytest", "selenium", "qa",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Communications :: Email",
+    "Typing :: Typed",
+]
+dependencies = ["requests>=2.25.0"]
+
+[project.urls]
+Homepage = "https://best-tempmail.com/api"
+Documentation = "https://best-tempmail.com/api"
+Repository = "https://github.com/mbilalawan926-sys/best-tempmail-python"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/best_tempmail"]
