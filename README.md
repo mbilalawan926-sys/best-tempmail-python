@@ -70,20 +70,45 @@ def test_signup_sends_verification_code(mail, browser):
 
 ## Waiting for mail
 
-`wait_for_message` holds one connection open until mail arrives, instead of polling in a loop. It returns `None` on timeout rather than raising, because nothing has gone wrong: the mail just has not arrived yet.
+`wait_for_message` returns as soon as a matching message is in the inbox. It returns `None` on timeout rather than raising, because nothing has gone wrong: the mail just has not arrived yet.
 
 ```python
 message = client.wait_for_message(
     inbox.address,
-    timeout=55,          # seconds, capped at 55 by the server
-    since=last_seen_id,  # optional: return the first message that is not this one
+    timeout=120,        # honoured in full, across as many requests as it takes
+    subject="verify",   # optional, and worth setting: see below
 )
 
 if message is None:
-    ...  # nothing arrived in time
+    ...  # nothing matching arrived in time
 ```
 
-Without `since`, anything already in the inbox when the call starts is treated as seen, so you only get genuinely new mail.
+**Pass `subject` or `from_` when you can.** Without a filter the first message to arrive wins, and in a real signup a welcome email often beats the verification email by a second. An unfiltered wait then hands you the wrong message and the test fails a long way from the cause.
+
+### What changed in 2.0.0, and why
+
+Two fixes, both for the same silent failure.
+
+**It now looks at mail that has already been delivered.** The API's long-poll endpoint signals mail *arriving*, so a message that landed before the call started was invisible to it. In a test that is the normal case rather than the edge case: you create the inbox, trigger the signup, and the email frequently wins the race against your next line of code. 1.x then burned the whole timeout and returned `None` while the message sat in the inbox unread.
+
+This is not hypothetical. The GitHub Action for this same API shipped with 21 passing tests and failed on the first real email for exactly this reason, because its mock answered the long poll whenever asked and so could not express the difference.
+
+**`timeout` is honoured in full.** 1.x clamped it to a single 55-second request, so `timeout=120` quietly waited 55 seconds and reported no mail, with nothing telling the caller it had given up early.
+
+If you were relying on the old semantics, which is reasonable when you are watching one inbox for successive messages, ask for them:
+
+```python
+message = client.wait_for_message(address, timeout=30, include_existing=False)
+```
+
+### Getting the code or the link in one call
+
+```python
+code = client.wait_for_code(inbox.address, subject="verify")   # a str, raises if none
+url = client.wait_for_action_url(inbox.address)                # a str, raises if none
+```
+
+These raise rather than returning `None`, because a caller asking for a bare string has nowhere to put "the mail came but held no code" and would otherwise type an empty string into the form under test. Use `wait_for_otp` or `wait_for_links` when you would rather have it as data and inspect the candidates yourself.
 
 ## Reading messages
 
@@ -222,18 +247,43 @@ with TempMail(api_key=key) as client:
 | --- | --- |
 | `get_domains()` | any |
 | `health()` | any |
-| `create_inbox(username=None, domain=None)` | any |
+| `get_usage()` | any, and informative without a key |
+| `create_inbox(username=None, domain=None, lifetime_minutes=None)` | any |
+| `create_inboxes(count, domain=None, lifetime_minutes=None)` | paid |
 | `get_inbox(address)` | any |
-| `delete_inbox(address)` | any |
-| `get_messages(address, limit=100)` | any |
+| `delete_inbox(address, missing_ok=True)` | any |
+| `get_messages(address, limit=100, **filters)` | any |
+| `list_messages(address, **filters)` | any |
 | `get_message(address, message_id)` | any |
-| `wait_for_message(address, timeout=30, since=None)` | any |
+| `wait_for_message(address, timeout=30, **filters)` | any |
 | `get_otp(address, message_id)` | paid |
-| `wait_for_otp(address, timeout=30)` | paid |
+| `wait_for_otp(address, timeout=30, **filters)` | paid |
+| `wait_for_code(address, timeout=30, **filters)` | paid |
+| `get_links(address, message_id)` | paid |
+| `wait_for_links(address, timeout=30, **filters)` | paid |
+| `wait_for_action_url(address, timeout=30, **filters)` | paid |
 | `download_attachment(address, message_id, index)` | Pro |
 | `register_webhook(url)` | paid |
 | `get_webhook()` | paid |
 | `delete_webhook()` | paid |
+
+`**filters` means `subject`, `from_`, `q`, and for the listing methods also `limit`, `offset`, `since`, `until` and `has_attachments`.
+
+### Searching a busy inbox
+
+`list_messages` returns the paging and search metadata that a plain list cannot carry:
+
+```python
+page = client.list_messages(address, q="ORD-48812", since="2026-07-04T00:00:00Z", limit=20)
+
+if not page.messages:
+    if page.conclusively_empty:
+        ...  # nothing in the inbox matches, definitively
+    else:
+        ...  # the search hit its ceiling: narrow it or move `since`
+```
+
+`q` searches the sender, the subject and the decoded body, ignoring text inside script and style blocks so a tracking script cannot produce a match.
 
 Full API documentation: [best-tempmail.com/api](https://best-tempmail.com/api)
 OpenAPI spec: [api.best-tempmail.com/v1/openapi.json](https://api.best-tempmail.com/v1/openapi.json)

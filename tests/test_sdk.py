@@ -42,7 +42,13 @@ m = free.get_message(inbox.address, "msg1")
 check(m.attachments[0].requires_plan == "pro", "attachment metadata maps requires_plan")
 check(pro.get_message(inbox.address, "msg1").attachments[0].downloadable, "pro sees downloadable True")
 
-check(free.wait_for_message(inbox.address, timeout=5) is None, "wait_for_message returns None on timeout")
+# Changed in 2.0.0. This used to assert None here, because wait_for_message
+# only long-polled and the mock's first /wait reports a timeout. But msg1 was
+# sitting in the inbox the whole time, unseen, which is the bug 2.0.0 fixes:
+# the wait now looks at what has already been delivered before waiting for
+# anything new. See tests/test_v2.py for the full coverage of both modes.
+got = free.wait_for_message(inbox.address, timeout=5)
+check(got is not None and got.id == "msg1", "wait_for_message sees mail already delivered")
 got = free.wait_for_message(inbox.address, timeout=5)
 check(got is not None and got.id == "msg1", "wait_for_message returns the message")
 
